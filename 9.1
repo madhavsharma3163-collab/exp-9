@@ -1,0 +1,134 @@
+org.springframework spring-context 6.0.0 org.springframework spring-orm 6.0.0 org.hibernate.orm hibernate-core 6.2.0.Final mysql mysql-connector-j 8.0.32 org.springframework spring-tx 6.0.0 package com.example;
+import jakarta.persistence.*;
+
+@Entity @Table(name = "student") public class Student { @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+
+private String name;
+private int age;
+
+public Student() { }
+public Student(String name, int age) {
+    this.name = name;
+    this.age  = age;
+}
+
+// getters & setters ...
+public Long getId() { return id; }
+public void setId(Long id) { this.id = id; }
+public String getName() { return name; }
+public void setName(String name) { this.name = name; }
+public int getAge() { return age; }
+public void setAge(int age) { this.age = age; }
+
+@Override
+public String toString() {
+    return "Student[id=" + id + ", name=" + name + ", age=" + age + "]";
+}
+} package com.example;
+
+import org.springframework.context.annotation.*; import org.springframework.transaction.annotation.EnableTransactionManagement; import org.springframework.orm.hibernate5.HibernateTransactionManager; import org.springframework.orm.hibernate5.LocalSessionFactoryBean;
+
+import javax.sql.DataSource; import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import java.util.Properties;
+
+@Configuration @EnableTransactionManagement @ComponentScan(basePackages = "com.example") public class AppConfig {
+
+@Bean
+public DataSource dataSource() {
+    var ds = new DriverManagerDataSource();
+    ds.setDriverClassName("com.mysql.cj.jdbc.Driver");
+    ds.setUrl("jdbc:mysql://localhost:3306/yourdb?useSSL=false");
+    ds.setUsername("root");
+    ds.setPassword("yourpassword");
+    return ds;
+}
+
+@Bean
+public LocalSessionFactoryBean sessionFactory() {
+    var factory = new LocalSessionFactoryBean();
+    factory.setDataSource(dataSource());
+    factory.setPackagesToScan("com.example");
+    Properties props = new Properties();
+    props.put("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
+    props.put("hibernate.hbm2ddl.auto", "update");
+    props.put("hibernate.show_sql", "true");
+    factory.setHibernateProperties(props);
+    return factory;
+}
+
+@Bean
+public HibernateTransactionManager transactionManager() {
+    var tm = new HibernateTransactionManager();
+    tm.setSessionFactory(sessionFactory().getObject());
+    return tm;
+}
+} package com.example;
+
+import org.hibernate.SessionFactory; import org.springframework.beans.factory.annotation.Autowired; import org.springframework.stereotype.Repository;
+
+@Repository public class StudentDao { @Autowired private SessionFactory sessionFactory;
+
+public void save(Student student) {
+    sessionFactory.getCurrentSession().save(student);
+}
+
+public Student findById(Long id) {
+    return sessionFactory.getCurrentSession().get(Student.class, id);
+}
+
+public void update(Student student) {
+    sessionFactory.getCurrentSession().update(student);
+}
+
+public void delete(Student student) {
+    sessionFactory.getCurrentSession().delete(student);
+}
+} package com.example;
+
+import org.springframework.beans.factory.annotation.Autowired; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional;
+
+@Service public class StudentService { @Autowired private StudentDao dao;
+
+@Transactional
+public void createAndMaybeFail(Student s, boolean fail) {
+    dao.save(s);
+    if (fail) {
+        // force a runtime exception so transaction should rollback
+        throw new RuntimeException("Forcing rollback!");
+    }
+    // otherwise continue
+}
+
+@Transactional(readOnly = true)
+public Student get(Long id) {
+    return dao.findById(id);
+}
+} package com.example;
+
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+public class MainApp { public static void main(String[] args) { var ctx = new AnnotationConfigApplicationContext(AppConfig.class);
+
+    StudentService service = ctx.getBean(StudentService.class);
+
+    Student s1 = new Student("Alice", 20);
+    try {
+        service.createAndMaybeFail(s1, true); // this will cause rollback
+    } catch (Exception e) {
+        System.out.println("Exception caught: " + e.getMessage());
+    }
+
+    // Check: should not exist
+    Student fetched = service.get(s1.getId());
+    System.out.println("Fetched after rollback: " + fetched);
+
+    Student s2 = new Student("Bob", 22);
+    service.createAndMaybeFail(s2, false); // commit
+
+    Student fetched2 = service.get(s2.getId());
+    System.out.println("Fetched after commit: " + fetched2);
+
+    ctx.close();
+}
+}
