@@ -1,0 +1,170 @@
+package com.example;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "students")
+public class Student {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private int age;
+
+    public Student() { }
+    public Student(String name, int age) {
+        this.name = name;
+        this.age  = age;
+    }
+
+    // getters & setters
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public int getAge() { return age; }
+    public void setAge(int age) { this.age = age; }
+
+    @Override
+    public String toString() {
+        return "Student[id=" + id + ", name=" + name + ", age=" + age + "]";
+    }
+}
+package com.example;
+
+import org.hibernate.SessionFactory;
+import org.hibernate.cfg.Configuration;
+
+public class HibernateUtil {
+    private static final SessionFactory sessionFactory = buildSessionFactory();
+
+    private static SessionFactory buildSessionFactory() {
+        try {
+            return new Configuration().configure("hibernate.cfg.xml")
+                                      .addAnnotatedClass(Student.class)
+                                      .buildSessionFactory();
+        } catch (Throwable ex) {
+            System.err.println("Initial SessionFactory creation failed: " + ex);
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    public static SessionFactory getSessionFactory() {
+        return sessionFactory;
+    }
+
+    public static void shutdown() {
+        getSessionFactory().close();
+    }
+}
+package com.example;
+
+import org.hibernate.Session;
+import org.hibernate.Transaction;
+import java.util.List;
+
+public class MainApp {
+
+    public static void main(String[] args) {
+        // CREATE
+        insertStudent(new Student("Alice", 20));
+        insertStudent(new Student("Bob",   22));
+
+        // READ all
+        listStudents();
+
+        // READ one
+        Student s = getStudent(1L);
+        System.out.println("Retrieved: " + s);
+
+        // UPDATE
+        if (s != null) {
+            s.setAge(21);
+            updateStudent(s);
+        }
+
+        // DELETE
+        deleteStudent(2L);
+
+        // Final list
+        listStudents();
+
+        HibernateUtil.shutdown();
+    }
+
+    public static void insertStudent(Student student) {
+        Transaction tx = null;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            session.persist(student);
+            tx.commit();
+            System.out.println("Inserted: " + student);
+        } catch (Exception e) {
+            if (tx != null) tx.rollback();
+            e.printStackTrace();
+        }
+    }
+
+    public static Student getStudent(Long id) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.get(Student.class, id);
+        }
+    }
+
+    public static List<Student> listStudents() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Student> students = session.createQuery("from Student", Student.class).list();
+            students.forEach(System.out::println);
+            return students;
+        }
+    }
+
+    public static void updateStudent(Student student) {
+        Transaction tx = null;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            session.merge(student);
+            tx.commit();
+            System.out.println("Updated: " + student);
+        } catch (Exception e) {
+            if (tx != null) tx.rollback();
+            e.printStackTrace();
+        }
+    }
+
+    public static void deleteStudent(Long id) {
+        Transaction tx = null;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            Student student = session.get(Student.class, id);
+            if (student != null) {
+                session.remove(student);
+                System.out.println("Deleted: " + student);
+            }
+            tx.commit();
+        } catch (Exception e) {
+            if (tx != null) tx.rollback();
+            e.printStackTrace();
+        }
+    }
+}
+<!DOCTYPE hibernate-configuration PUBLIC
+        "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+        "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
+<hibernate-configuration>
+  <session-factory>
+    <property name="hibernate.connection.driver_class">com.mysql.cj.jdbc.Driver</property>
+    <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/yourdb?useSSL=false</property>
+    <property name="hibernate.connection.username">root</property>
+    <property name="hibernate.connection.password">yourpassword</property>
+
+    <property name="hibernate.dialect">org.hibernate.dialect.MySQL8Dialect</property>
+    <property name="hibernate.show_sql">true</property>
+    <property name="hibernate.hbm2ddl.auto">update</property>
+
+    <mapping class="com.example.Student"/>
+  </session-factory>
+</hibernate-configuration>
